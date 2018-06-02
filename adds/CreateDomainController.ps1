@@ -36,12 +36,21 @@
             IncludeAllSubFeature = $false
         }
         
+        xWaitForADDomain DscForestWait
+        {
+            DomainName           = $DomainName
+            DomainUserCredential = $AdminCredential
+            RetryCount           = $RetryCount
+            RetryIntervalSec     = $RetryIntervalSec
+            DependsOn            = @('[WindowsFeatureSet]WindowsFeatures')
+        }
+        
         xADDomainController CreateDomainController
         {
             DomainName                    = $DomainName
             DomainAdministratorCredential = $AdminCredential
             SafemodeAdministratorPassword = $SafeModeCredential
-            DependsOn                     = @('[WindowsFeatureSet]WindowsFeatures')
+            DependsOn                     = @('[xWaitForADDomain]DscForestWait')
         }        
         
         xPendingReboot RebootAfterPromotion
