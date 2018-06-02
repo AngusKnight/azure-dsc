@@ -44,12 +44,12 @@
             DependsOn            = @('[WindowsFeatureSet]WindowsFeatures')
         }
         
-        xADDomainController AddDomainController
+        xADDomainController CreateDomainController
         {
             DomainName                    = $DomainName
             DomainAdministratorCredential = $AdminCredential
             SafemodeAdministratorPassword = $SafeModeCredential
-            DependsOn                     = @('[xDnsServerAddress]DnsServerAddress')
+            DependsOn                     = @('[xWaitForADDomain]WaitForDomain')
         }        
     }
 }
