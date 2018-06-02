@@ -35,21 +35,12 @@
             IncludeAllSubFeature = $false
         }
         
-        xWaitForADDomain WaitForDomain
-        {
-            DomainName           = $DomainName
-            DomainUserCredential = $AdminCredential
-            RetryCount           = $RetryCount
-            RetryIntervalSec     = $RetryIntervalSec
-            DependsOn            = @('[WindowsFeatureSet]WindowsFeatures')
-        }
-        
         xADDomainController CreateDomainController
         {
             DomainName                    = $DomainName
             DomainAdministratorCredential = $AdminCredential
             SafemodeAdministratorPassword = $SafeModeCredential
-            DependsOn                     = @('[xWaitForADDomain]WaitForDomain')
+            DependsOn                     = @('[WindowsFeatureSet]WindowsFeatures')
         }        
     }
 }
