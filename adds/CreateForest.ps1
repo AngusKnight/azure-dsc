@@ -51,5 +51,5 @@
             SafemodeAdministratorPassword = $SafeModeCredential
             DependsOn                     = @('[xDnsServerAddress]DnsServerAddress')
         }
-   }
+    }
 }
