@@ -14,13 +14,13 @@ Configuration PrepareSqlServer
         [Parameter(Mandatory)]
         [System.Management.Automation.PSCredential]$SqlSa,
 		
-		[Parameter]
+		[Parameter(Mandatory=$false)]
 		[UInt32]$DatabaseEnginePort = 1433,
 		
-		[Parameter]
+		[Parameter(Mandatory=$false)]
 		[UInt32]$DatabaseMirrorPort,
 		
-		[Parameter]
+		[Parameter(Mandatory=$false)]
 		[UInt32]$ListenerPortNumber
     )
     
