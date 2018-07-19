@@ -113,8 +113,7 @@ Configuration PrepareSqlServer
                 {
                     # use BackupDirectory as it is the only registry key that contains the path we use.
                     Write-Verbose -Message 'SQL Server is installed, checking BackupDirectory path.'
-                    $BackupDirectory = '{0}\{1}\MSSQL\Backup' -f $using:DataDiskDriveLetter, $using:SqlInstanceData
-                    if ($BackupDirectory -eq (Get-ItemProperty -Path $Path -Name BackupDirectory).BackupDirectory)
+                    if ($using:SqlBackupDir -eq (Get-ItemProperty -Path $Path -Name BackupDirectory).BackupDirectory)
                     {
                         Write-Verbose -Message 'Expected BackupDirectory path found.'
                         return $true
