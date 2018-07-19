@@ -12,19 +12,10 @@ Configuration PrepareSqlServer
         [System.Management.Automation.PSCredential]$SqlServiceAccount,
 
         [Parameter(Mandatory)]
-        [System.Management.Automation.PSCredential]$SqlSa,
-		
-		[Parameter(Mandatory=$true)]
-		[UInt32]$DatabaseEnginePort,
-		
-		[Parameter(Mandatory=$false)]
-		[UInt32]$DatabaseMirrorPort,
-		
-		[Parameter(Mandatory=$false)]
-		[UInt32]$ListenerPortNumber
+        [System.Management.Automation.PSCredential]$SqlSa
     )
     
-    Import-DscResource -ModuleName PSDesiredStateConfiguration,NetworkingDsc,SecurityPolicyDsc,SqlServer,SqlServerDsc,StorageDsc
+    Import-DscResource -ModuleName PSDesiredStateConfiguration,NetworkingDsc,SecurityPolicyDsc,SqlServer,SqlServerDsc,StorageDsc,xActiveDirectory
     
     $DomainNetbiosName=(Get-NetBiosName -DomainName $DomainName)
     $DomainAdmin = New-Object System.Management.Automation.PSCredential ("${DomainNetbiosName}\$($DomainAdmin.UserName)", $DomainAdmin.Password)
@@ -44,6 +35,20 @@ Configuration PrepareSqlServer
         LocalConfigurationManager 
         {
             RebootNodeIfNeeded = $true
+        }
+
+        Firewall DatabaseEngineFirewallRule
+        {
+            Ensure = 'Present'
+			Action = 'Allow'
+            Direction = 'Inbound'
+            Name = 'SQL-Server-Database-Engine-TCP-In'
+            DisplayName = 'SQL Server Database Engine (TCP-In)'
+            Description = 'Inbound rule for SQL Server to allow TCP traffic for the Database Engine.'
+            Group = 'SQL Server'
+            Enabled = 'True'
+            Protocol = 'TCP'
+            LocalPort = '1433'
         }
 
         Script UninstallDefaultInstance
@@ -94,54 +99,6 @@ Configuration PrepareSqlServer
             }
         }
 
-        Firewall DatabaseEngineFirewallRule
-        {
-            Ensure = 'Present'
-			Action = 'Allow'
-            Direction = 'Inbound'
-            Name = 'SQL-Server-Database-Engine-TCP-In'
-            DisplayName = 'SQL Server Database Engine (TCP-In)'
-            Description = 'Inbound rule for SQL Server to allow TCP traffic for the Database Engine.'
-            Group = 'SQL Server'
-            Enabled = 'True'
-            Protocol = 'TCP'
-            LocalPort = $DatabaseEnginePort -as [String]
-        }
-
-		if ($PSBoundParameters.ContainsKey('DatabaseMirrorPort'))
-		{
-			Firewall DatabaseMirroringFirewallRule
-			{
-				Ensure = 'Present'
-				Action = 'Allow'
-				Direction = 'Inbound'
-				Name = 'SQL-Server-Database-Mirroring-TCP-In'
-				DisplayName = 'SQL Server Database Mirroring (TCP-In)'
-				Description = 'Inbound rule for SQL Server to allow TCP traffic for the Database Mirroring.'
-				Group = 'SQL Server'
-				Enabled = 'True'
-				Protocol = 'TCP'
-				LocalPort = $DatabaseMirrorPort -as [String]
-			}
-		}
-
-		if ($PSBoundParameters.ContainsKey('ListenerPortNumber'))
-		{
-			Firewall ListenerFirewallRule
-			{
-				Ensure = 'Present'
-				Action = 'Allow'
-				Direction = 'Inbound'
-				Name = 'SQL-Server-Availability-Group-Listener-TCP-In'
-				DisplayName = 'SQL Server Availability Group Listener (TCP-In)'
-				Description = 'Inbound rule for SQL Server to allow TCP traffic for the Availability Group listener.'
-				Group = 'SQL Server'
-				Enabled = 'True'
-				Protocol = 'TCP'
-				LocalPort = $ListenerPortNumber -as [string]
-			}
-		}
-
         # create striped data disk
         Script SetupDataDisk
         {
@@ -173,8 +130,17 @@ Configuration PrepareSqlServer
 			
 			DependsOn = @('[Script]UninstallDefaultInstance')
         }
-        
-        UserRightsAssignment AssignLogOnAsService
+
+        xADUser CreateSqlServerServiceAccount
+        {
+            Ensure = 'Present'
+            DomainAdministratorCredential = $DomainCreds
+            DomainName = $DomainName
+            UserName = $SqlServiceAccount.UserName
+            Password = $SqlServiceAccount
+        }
+
+        UserRightsAssignment AssignLogOnAsServiceRight
         {
             Policy    = 'Log_on_as_a_service'
             Identity  = $SqlServiceAccount.UserName
@@ -195,7 +161,7 @@ Configuration PrepareSqlServer
 			SQLSvcAccount			= $SqlServiceAccount
 			SQLSysAdminAccounts		= @($SqlSa,$SqlServiceAccount,$DomainAdmin)
             PsDscRunAsCredential    = $DomainAdmin
-            DependsOn               = @('[Script]SetupDataDisk')
+            DependsOn               = @('[Script]SetupDataDisk','[UserRightsAssignment]AssignLogOnAsServiceRight')
         }
     }
 }
