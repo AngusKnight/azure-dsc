@@ -24,10 +24,10 @@ Configuration PrepareSqlServer
 	# find next available disk letter for Add disk
     $DataDiskDriveLetter = ls function:[f-z]: -n | ?{ !(test-path $_) } | select -First 1
     
-	$SqlDbPath = Join-Path -Path $DataDiskDriveLetter -ChildPath Data
     $SqlDiskName = 'SqlDisk01'
     $SqlInstanceName = 'MSSQLSERVER'
     $SqlInstanceData = 'MSSQL13.MSSQLSERVER'
+	$SqlPath = Join-Path -Path $DataDiskDriveLetter -ChildPath SqlInstanceData
     $SqlPoolName = 'SqlPool01'
     
     Node localhost
@@ -147,6 +147,39 @@ Configuration PrepareSqlServer
 			DependsOn = @('[xADUser]CreateSqlServerServiceAccount')
         }
 
+		File CreateSqlDirectory
+		{
+			Ensure 			= 'Present'
+			Type   			= 'Directory'
+			DestinationPath = $SqlPath
+		}
+
+        Script SqlDirectoryPermissions
+        {
+            # does nothing
+            GetScript = {
+                @{ Result = $true }
+            }
+            
+            SetScript = {
+                $ar = New-Object System.Security.AccessControl.FileSystemAccessRule($using:SqlServiceAccount.UserName, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')
+                $acl = Get-Acl -Path $using:SqlPath
+                $acl.AddAccessRule($ar)
+                Set-Acl -Path $using:SqlPath -AclObject $acl
+            }
+            
+            # return true if the node is up-to-date
+            TestScript = {
+                $acl = Get-Acl -Path $using:SqlPath
+                if ($acl.Access | Where-Object IdentityReference -eq $using:SqlServiceAccount.UserName)
+                {
+                    return $true
+                }
+                return $false
+            }
+            DependsOn = @('[File]CreateSqlDirectory')
+        }
+
         SqlSetup InstallSqlServer
         {
             InstanceName            = $SqlInstanceName
@@ -159,9 +192,9 @@ Configuration PrepareSqlServer
             SAPwd                   = $SqlSa
 			AgtSvcAccount			= $SqlServiceAccount
 			SQLSvcAccount			= $SqlServiceAccount
-			SQLSysAdminAccounts		= @($SqlSa,$SqlServiceAccount,$DomainAdmin)
+			SQLSysAdminAccounts		= @($SqlSa.UserName,$SqlServiceAccount.UserName,$DomainAdmin.UserName)
             PsDscRunAsCredential    = $DomainAdmin
-            DependsOn               = @('[Script]SetupDataDisk','[UserRightsAssignment]AssignLogOnAsServiceRight')
+            DependsOn               = @('[Script]SetupDataDisk','[UserRightsAssignment]AssignLogOnAsServiceRight','[Script]SqlDirectoryPermissions')
         }
     }
 }
