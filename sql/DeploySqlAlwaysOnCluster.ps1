@@ -52,7 +52,7 @@ Configuration DeploySqlAlwaysOnCluster
     $witnessStorageAccount = $uriComp[0]
     $witnessEndpoint = $uricomp[-3] + '.' + $uricomp[-2] + '.' + $uricomp[-1]
 
-    $DataDiskDriveLetter = ls function:[f-z]: -n | ?{ !(test-path $_) } | select -First 1
+    $DataDiskDriveLetter = Get-DataDisk
     $ClusterService = 'NT SERVICE\ClusSvc'
     $DatabaseMirroringPort = 5022
     $ListenerPort = 59999
@@ -354,13 +354,15 @@ Configuration DeploySqlAlwaysOnCluster
                 )
                 foreach ($spn in $SpnList)
                 {
-                    $cmd = 'setspn -D {0} {1}' -f $spn, $using:ComputerName
-                    Write-Verbose $cmd
-                    Invoke-Expression $cmd
+                    $params = @('-D', $spn, $using:ComputerName)
+                    Write-Verbose ("setspn.exe {0}" -f ($params -join ' '))
+                    $result = Start-Process -FilePath 'setspn.exe' -ArgumentList $params -NoNewWindow -PassThru -Wait
+                    Write-Verbose "setspn.exe returned $($result.ExitCode)"
 
-                    $cmd = 'setspn -A {0} {1}' -f $spn, $using:SqlServiceAccount.UserName
-                    Write-Verbose $cmd
-                    Invoke-Expression $cmd
+                    $params = @('-A', $spn, $using:ComputerName)
+                    Write-Verbose ("setspn.exe {0}" -f ($params -join ' '))
+                    $result = Start-Process -FilePath 'setspn.exe' -ArgumentList $params -NoNewWindow -PassThru -Wait
+                    Write-Verbose "setspn.exe returned $($result.ExitCode)"
                 }
             }
 
@@ -408,18 +410,19 @@ Configuration DeploySqlAlwaysOnCluster
                 SetScript = {
                     $dn = (Get-ADComputer -Identity $using:ComputerName).DistinguishedName
                     $ou = $dn.Substring($dn.IndexOf('OU='))
-                    $user = '{0}\{1}' -f $using:DomainNetbiosName, $using:ClusterName
+                    $user = '{0}\{1}$' -f $using:DomainNetbiosName, $using:ClusterName
                     $PermsList = @('GR','CC;computer')
                     foreach ($permission in $PermsList)
                     {
-                        $cmd = 'dsacls.exe {0} /I:T /G "{1}:{2}"' -f $ou, $user, $permission
-                        Write-Verbose $cmd
-                        Invoke-Expression $cmd
+                        $params = @($ou, '/I:T', '/G', '"{0}:{1}"' -f $user, $permission)
+                        Write-Verbose ("dsacls.exe {0}" -f ($params -join ' '))
+                        $result = Start-Process -FilePath 'dsacls.exe' -ArgumentList $params -NoNewWindow -PassThru -Wait
+                        Write-Verbose "dsacls.exe returned $($result.ExitCode)"
                     }
                 }
 
                 TestScript = {
-                    $false
+                    return $false
                 }
 
                 PsDscRunAsCredential = $DomainAdmin
@@ -665,4 +668,18 @@ function Get-NetBIOSName
             return $DomainName
         }
     }
+}
+
+Function Get-DataDisk
+{
+    $Drives = Get-ChildItem -Path function:[f-z]: -n
+    foreach ($Drive in $Drives)
+    {
+        if ((Test-Path "$Drive\Backup") -and (Test-Path "$Drive\Data") -and (Test-Path "$Drive\Log"))
+        {
+            return $Drive
+        }
+    }
+    # use first available
+    $Drives | Where{-Not(Test-Path $_)} | Select -First 1
 }
