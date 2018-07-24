@@ -20,18 +20,19 @@ Configuration PrepareSqlServer
     $DomainNetbiosName=(Get-NetBiosName -DomainName $DomainName)
     $DomainAdmin = New-Object System.Management.Automation.PSCredential ("${DomainNetbiosName}\$($DomainAdmin.UserName)", $DomainAdmin.Password)
     $SqlServiceUserName = $SqlServiceAccount.UserName
-	$SqlServiceAccount = New-Object System.Management.Automation.PSCredential ("${DomainNetbiosName}\$($SqlServiceAccount.UserName)", $SqlServiceAccount.Password)
+    $SqlServiceAccount = New-Object System.Management.Automation.PSCredential ("${DomainNetbiosName}\$($SqlServiceAccount.UserName)", $SqlServiceAccount.Password)
 
-	# find next available disk letter for Add disk
-    $DataDiskDriveLetter = ls function:[f-z]: -n | ?{ !(test-path $_) } | select -First 1
+    $WindowsFeatures = @('RSAT-AD-PowerShell')
+    $DataDiskDriveLetter = Get-DataDisk
     $SqlBackupDir = "$DataDiskDriveLetter\Backup"
     $SqlDataDir = "$DataDiskDriveLetter\Data"
     $SqlDiskName = 'SqlDisk01'
     $SqlInstanceName = 'MSSQLSERVER'
     $SqlInstanceData = 'MSSQL13.MSSQLSERVER'
     $SqlLogDir = "$DataDiskDriveLetter\Log"
-	$SqlPath = '{0}\{1}' -f $DataDiskDriveLetter, $SqlInstanceData
     $SqlPoolName = 'SqlPool01'
+
+    WaitForSqlSetup
     
     Node localhost
     {
@@ -40,10 +41,25 @@ Configuration PrepareSqlServer
             RebootNodeIfNeeded = $true
         }
 
-        WindowsFeature ActiveDirectoryPowerShellModule
+        WindowsFeatureSet WindowsFeatures
+        {
+            Ensure               = 'Present'
+            Name                 = $WindowsFeatures
+            IncludeAllSubFeature = $false
+        }
+
+        Firewall DatabaseEngineFirewallRule
         {
             Ensure = 'Present'
-            Name   = 'RSAT-AD-PowerShell'
+            Action = 'Allow'
+            Direction = 'Inbound'
+            Name = 'SQL-Server-Database-Engine-TCP-In'
+            DisplayName = 'SQL Server Database Engine (TCP-In)'
+            Description = 'Inbound rule for SQL Server to allow TCP traffic for the Database Engine.'
+            Group = 'SQL Server'
+            Enabled = 'True'
+            Protocol = 'TCP'
+            LocalPort = '1433'
         }
 
         xADUser CreateSqlServerServiceAccount
@@ -55,28 +71,14 @@ Configuration PrepareSqlServer
             UserName = $SqlServiceUserName
             Password = $SqlServiceAccount
             PasswordNeverExpires = $true
-            DependsOn = @('[WindowsFeature]ActiveDirectoryPowerShellModule')
+            DependsOn = @('[WindowsFeatureSet]WindowsFeatures')
         }
 
         UserRightsAssignment AssignLogOnAsServiceRight
         {
             Policy    = 'Log_on_as_a_service'
             Identity  = $SqlServiceAccount.UserName
-			DependsOn = @('[xADUser]CreateSqlServerServiceAccount')
-        }
-
-        Firewall DatabaseEngineFirewallRule
-        {
-            Ensure = 'Present'
-			Action = 'Allow'
-            Direction = 'Inbound'
-            Name = 'SQL-Server-Database-Engine-TCP-In'
-            DisplayName = 'SQL Server Database Engine (TCP-In)'
-            Description = 'Inbound rule for SQL Server to allow TCP traffic for the Database Engine.'
-            Group = 'SQL Server'
-            Enabled = 'True'
-            Protocol = 'TCP'
-            LocalPort = '1433'
+            DependsOn = @('[xADUser]CreateSqlServerServiceAccount')
         }
 
         Script UninstallDefaultInstance
@@ -153,8 +155,8 @@ Configuration PrepareSqlServer
                 }
                 return $true
             }
-			
-			DependsOn = @('[Script]UninstallDefaultInstance')
+            
+            DependsOn = @('[Script]UninstallDefaultInstance')
         }
 
         WaitForVolume WaitForDataDisk
@@ -163,13 +165,13 @@ Configuration PrepareSqlServer
             DependsOn   = @('[Script]SetupDataDisk')
         }
 
-		File CreateSqlBackupDirectory
-		{
-			Ensure 			= 'Present'
-			Type   			= 'Directory'
-			DestinationPath = $SqlBackupDir
+        File CreateSqlBackupDirectory
+        {
+            Ensure             = 'Present'
+            Type               = 'Directory'
+            DestinationPath = $SqlBackupDir
             DependsOn       = @('[WaitForVolume]WaitForDataDisk')
-		}
+        }
 
         cNtfsPermissionEntry SqlBackupDirPermissions
         {
@@ -188,13 +190,13 @@ Configuration PrepareSqlServer
             DependsOn = @('[File]CreateSqlBackupDirectory')
         }
 
-		File CreateSqlDataDirectory
-		{
-			Ensure 			= 'Present'
-			Type   			= 'Directory'
-			DestinationPath = $SqlDataDir
+        File CreateSqlDataDirectory
+        {
+            Ensure             = 'Present'
+            Type               = 'Directory'
+            DestinationPath = $SqlDataDir
             DependsOn       = @('[WaitForVolume]WaitForDataDisk')
-		}
+        }
 
         cNtfsPermissionEntry SqlDataDirPermissions
         {
@@ -213,13 +215,13 @@ Configuration PrepareSqlServer
             DependsOn = @('[File]CreateSqlDataDirectory')
         }
 
-		File CreateSqlLogDirectory
-		{
-			Ensure 			= 'Present'
-			Type   			= 'Directory'
-			DestinationPath = $SqlLogDir
+        File CreateSqlLogDirectory
+        {
+            Ensure             = 'Present'
+            Type               = 'Directory'
+            DestinationPath = $SqlLogDir
             DependsOn       = @('[WaitForVolume]WaitForDataDisk')
-		}
+        }
 
         cNtfsPermissionEntry SqlLogDirPermissions
         {
@@ -245,18 +247,35 @@ Configuration PrepareSqlServer
             SourcePath              = 'C:\SQLServerFull'
             ForceReboot             = $true
             InstallSharedDir        = 'C:\Program Files\Microsoft SQL Server'
-			SQLBackupDir			= "$DataDiskDriveLetter\Backup"
-			SQLTempDBDir			= "$DataDiskDriveLetter\Data"
-			SQLTempDBLogDir			= "$DataDiskDriveLetter\Log"
-			SQLUserDBDir			= "$DataDiskDriveLetter\Data"
-			SQLUserDBLogDir			= "$DataDiskDriveLetter\Log"
+            SQLBackupDir            = "$DataDiskDriveLetter\Backup"
+            SQLTempDBDir            = "$DataDiskDriveLetter\Data"
+            SQLTempDBLogDir            = "$DataDiskDriveLetter\Log"
+            SQLUserDBDir            = "$DataDiskDriveLetter\Data"
+            SQLUserDBLogDir            = "$DataDiskDriveLetter\Log"
             SecurityMode            = 'SQL'
             SAPwd                   = $SqlSa
-			AgtSvcAccount			= $SqlServiceAccount
-			SQLSvcAccount			= $SqlServiceAccount
-			SQLSysAdminAccounts		= @($SqlServiceAccount.UserName,$DomainAdmin.UserName)
+            AgtSvcAccount            = $SqlServiceAccount
+            SQLSvcAccount            = $SqlServiceAccount
+            SQLSysAdminAccounts        = @($SqlServiceAccount.UserName,$DomainAdmin.UserName)
             PsDscRunAsCredential    = $DomainAdmin
             DependsOn               = @('[cNtfsPermissionEntry]SqlBackupDirPermissions','[cNtfsPermissionEntry]SqlDataDirPermissions','[cNtfsPermissionEntry]SqlLogDirPermissions','[UserRightsAssignment]AssignLogOnAsServiceRight')
+        }
+    }
+}
+
+function WaitForSqlSetup
+{
+    # Wait for SQL Server Setup to finish before proceeding.
+    while ($true)
+    {
+        try
+        {
+            Get-ScheduledTaskInfo "\ConfigureSqlImageTasks\RunConfigureImage" -ErrorAction Stop
+            Start-Sleep -Seconds 5
+        }
+        catch
+        {
+            break
         }
     }
 }
@@ -272,7 +291,7 @@ Function Get-NetBiosName
     {
         $length = $DomainName.IndexOf('.')
         if ( $length -ge 16)
-		{
+        {
             $length = 15
         }
         return $DomainName.Substring(0,$length)
@@ -288,4 +307,18 @@ Function Get-NetBiosName
             return $DomainName
         }
     }
+}
+
+Function Get-DataDisk
+{
+    $Drives = Get-ChildItem -Path function:[f-z]: -n
+    foreach ($Drive in $Drives)
+    {
+        if ((Test-Path "$Drive\Backup") -and (Test-Path "$Drive\Data") -and (Test-Path "$Drive\Log"))
+        {
+            return $Drive
+        }
+    }
+    # use first available
+    $Drives | Where{-Not(Test-Path $_)} | Select -First 1
 }
